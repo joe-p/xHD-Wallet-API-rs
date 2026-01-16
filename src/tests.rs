@@ -83,3 +83,226 @@ fn marshall_xprv() {
     assert_eq!(xprv.public(), xprv2.public());
     assert_eq!(cc, xprv.public().chain_code());
 }
+
+#[test]
+fn xprv_derive_peikert() {
+    // Test that derivation with Peikert scheme works
+    let prv = XPrv::from_bytes_verified(D1).unwrap();
+    assert!(prv.is_3rd_highest_bit_clear());
+
+    // Derive with Peikert scheme
+    let child_peikert = prv.derive(DerivationScheme::Peikert, 0x80000000);
+
+    // Derive with standard V2 scheme
+    let child_v2 = prv.derive(DerivationScheme::V2, 0x80000000);
+
+    // Peikert derivation should produce a different result than V2
+    // (because it keeps more bits from zL)
+    assert_ne!(child_peikert.as_ref(), child_v2.as_ref());
+
+    // Both should be valid keys (can sign and verify)
+    let msg = b"test message";
+    let sig_peikert: Signature<Vec<u8>> = child_peikert.sign(msg);
+    let sig_v2: Signature<Vec<u8>> = child_v2.sign(msg);
+
+    assert!(child_peikert.verify(msg, &sig_peikert));
+    assert!(child_v2.verify(msg, &sig_v2));
+}
+
+const ROOT_KEY_HEX: &str = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
+
+fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationScheme) -> XPrv {
+    let mut current_xprv = root_xprv.clone();
+    for &index in path {
+        current_xprv = current_xprv.derive(scheme, index);
+    }
+    current_xprv
+}
+
+/// Helper to convert hex string to bytes
+fn hex_to_bytes(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+pub enum KeyContext {
+    Address,
+    Identity,
+}
+
+const HARDENED_OFFSET: u32 = 0x80_00_00_00;
+
+fn key_gen_test(
+    key_context: KeyContext,
+    account: DerivationIndex,
+    index: DerivationIndex,
+    expected_public_key_hex: &str,
+) {
+    let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
+    let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
+
+    let path: [DerivationIndex; 5] = [
+        44 + HARDENED_OFFSET, // 44'
+        match key_context {
+            KeyContext::Address => 283 + HARDENED_OFFSET, // 283'
+            KeyContext::Identity => HARDENED_OFFSET,      // 0'
+        },
+        account + HARDENED_OFFSET, // 0'
+        0,                         // 0
+        index,                     // 0
+    ];
+
+    let derived_xprv = derive_path(&root_xprv, &path, DerivationScheme::Peikert);
+    let public_key = derived_xprv.public();
+
+    let expected_public_key = hex_to_bytes(expected_public_key_hex);
+
+    assert_eq!(
+        public_key.public_key_slice(),
+        expected_public_key.as_slice(),
+        "Derived Algorand address public key should match expected value"
+    );
+}
+
+// Test: Derive m'/44'/283'/0'/0/0 Algorand Address Key
+// This matches the TypeScript test:
+// it("(OK) Derive m'/44'/283'/0'/0/0 Algorand Address Key", async () => {
+//     const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 0, 0)
+//     expect(key).toEqual(new Uint8Array(Buffer.from("7bda7ac12627b2c259f1df6875d30c10b35f55b33ad2cc8ea2736eaa3ebcfab9", "hex")))
+// })
+// it("\(OK) Derive m'/44'/283'/0'/0/1 Algorand Address Key", async () => {
+//        const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 0, 1)
+//        expect(key).toEqual(new Uint8Array(Buffer.from("5bae8828f111064637ac5061bd63bc4fcfe4a833252305f25eeab9c64ecdf519", "hex")))
+//    })
+//
+//    it("\(OK) Derive m'/44'/283'/0'/0/2 Algorand Address Key", async () => {
+//        const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 0, 2)
+//        expect(key).toEqual(new Uint8Array(Buffer.from("00a72635e97cba966529e9bfb4baf4a32d7b8cd2fcd8e2476ce5be1177848cb3", "hex")))
+//    })
+#[test]
+fn algorand_soft_derivation() {
+    key_gen_test(
+        KeyContext::Address,
+        0,
+        0,
+        "7bda7ac12627b2c259f1df6875d30c10b35f55b33ad2cc8ea2736eaa3ebcfab9",
+    );
+
+    key_gen_test(
+        KeyContext::Address,
+        0,
+        1,
+        "5bae8828f111064637ac5061bd63bc4fcfe4a833252305f25eeab9c64ecdf519",
+    );
+
+    key_gen_test(
+        KeyContext::Address,
+        0,
+        2,
+        "00a72635e97cba966529e9bfb4baf4a32d7b8cd2fcd8e2476ce5be1177848cb3",
+    );
+}
+//
+// it("\(OK) Derive m'/44'/283'/1'/0/0 Algorand Address Key", async () => {
+//         const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 1, 0)
+//         expect(key).toEqual(new Uint8Array(Buffer.from("358d8c4382992849a764438e02b1c45c2ca4e86bbcfe10fd5b963f3610012bc9", "hex")))
+//     })
+//
+//     it("\(OK) Derive m'/44'/283'/2'/0/1 Algorand Address Key", async () => {
+//         const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 2, 1)
+//         expect(key).toEqual(new Uint8Array(Buffer.from("1f0f75fbbca12b22523973191061b2f96522740e139a3420c730717ac5b0dfc0", "hex")))
+//     })
+//
+//     it("\(OK) Derive m'/44'/283'/3'/0/0 Algorand Address Key", async () => {
+//         const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Address, 3, 0)
+//         expect(key).toEqual(new Uint8Array(Buffer.from("f035316f915b342ea5fe78dccb59d907b93805732219d436a1bd8488ff4e5b1b", "hex")))
+//     })
+#[test]
+fn algorand_hard_derivation() {
+    key_gen_test(
+        KeyContext::Address,
+        1,
+        0,
+        "358d8c4382992849a764438e02b1c45c2ca4e86bbcfe10fd5b963f3610012bc9",
+    );
+
+    key_gen_test(
+        KeyContext::Address,
+        2,
+        1,
+        "1f0f75fbbca12b22523973191061b2f96522740e139a3420c730717ac5b0dfc0",
+    );
+
+    key_gen_test(
+        KeyContext::Address,
+        3,
+        0,
+        "f035316f915b342ea5fe78dccb59d907b93805732219d436a1bd8488ff4e5b1b",
+    );
+}
+
+// it("\(OK) Derive m'/44'/0'/0'/0/0 Identity Key", async () => {
+//            const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Identity, 0, 0)
+//            expect(key).toEqual(new Uint8Array(Buffer.from("ff8b1863ef5e40d0a48c245f26a6dbdf5da94dc75a1851f51d8a04e547bd5f5a", "hex")))
+//        })
+//
+//        it("\(OK) Derive m'/44'/0'/0'/0/1 Identity Key", async () => {
+//            const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Identity, 0, 1)
+//            expect(key).toEqual(new Uint8Array(Buffer.from("2b46c2af0890493e486049d456509a0199e565b41a5fb622f0ea4b9337bd2b97", "hex")))
+//        })
+//
+//        it("\(OK) Derive m'/44'/0'/0'/0/2 Identity Key", async () => {
+//            const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Identity, 0, 2)
+//            expect(key).toEqual(new Uint8Array(Buffer.from("2713f135f19ef3dcfca73cb536b1e077b1165cd0b7bedbef709447319ff0016d", "hex")))
+//        })
+#[test]
+fn identity_soft_derivation() {
+    key_gen_test(
+        KeyContext::Identity,
+        0,
+        0,
+        "ff8b1863ef5e40d0a48c245f26a6dbdf5da94dc75a1851f51d8a04e547bd5f5a",
+    );
+
+    key_gen_test(
+        KeyContext::Identity,
+        0,
+        1,
+        "2b46c2af0890493e486049d456509a0199e565b41a5fb622f0ea4b9337bd2b97",
+    );
+
+    key_gen_test(
+        KeyContext::Identity,
+        0,
+        2,
+        "2713f135f19ef3dcfca73cb536b1e077b1165cd0b7bedbef709447319ff0016d",
+    );
+}
+
+// it("\(OK) Derive m'/44'/0'/1'/0/0 Identity Key", async () => {
+//                const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Identity, 1, 0)
+//                expect(key).toEqual(new Uint8Array(Buffer.from("232847ae1bb95babcaa50c8033fab98f59e4b4ad1d89ac523a90c830e4ceee4a", "hex")))
+//            })
+//
+//            it("\(OK) Derive m'/44'/0'/2'/0/1 Identity Key", async () => {
+//                const key: Uint8Array = await cryptoService.keyGen(rootKey, KeyContext.Identity, 2, 1)
+//                expect(key).toEqual(new Uint8Array(Buffer.from("8f68b6572860d84e8a41e38db1c8c692ded5eb291846f2e5bbfde774a9c6d16e", "hex")))
+//            })
+#[test]
+fn identity_hard_derivation() {
+    key_gen_test(
+        KeyContext::Identity,
+        1,
+        0,
+        "232847ae1bb95babcaa50c8033fab98f59e4b4ad1d89ac523a90c830e4ceee4a",
+    );
+
+    key_gen_test(
+        KeyContext::Identity,
+        2,
+        1,
+        "8f68b6572860d84e8a41e38db1c8c692ded5eb291846f2e5bbfde774a9c6d16e",
+    );
+}
