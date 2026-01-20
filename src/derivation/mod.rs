@@ -22,19 +22,17 @@ pub enum DerivationError {
 
 fn add_256bits(x: &[u8; 32], y: &[u8; 32], scheme: DerivationScheme) -> [u8; 32] {
     match scheme {
-        DerivationScheme::V2 => v2::add_256bits_v2(x, y),
+        DerivationScheme::V2 | DerivationScheme::Peikert => v2::add_256bits_v2(x, y),
     }
 }
 
-fn add_28_mul8(x: &[u8; 32], y: &[u8; 32], scheme: DerivationScheme) -> [u8; 32] {
-    match scheme {
-        DerivationScheme::V2 => v2::add_28_mul8_v2(x, y),
-    }
+fn add_mul8(x: &[u8; 32], y: &[u8; 32], scheme: DerivationScheme) -> [u8; 32] {
+    v2::add_mul8(x, y, scheme)
 }
 
 fn serialize_index(i: u32, derivation_scheme: DerivationScheme) -> [u8; 4] {
     match derivation_scheme {
-        DerivationScheme::V2 => v2::le32(i),
+        DerivationScheme::V2 | DerivationScheme::Peikert => v2::le32(i),
     }
 }
 
@@ -81,8 +79,10 @@ pub fn private(xprv: &XPrv, index: DerivationIndex, scheme: DerivationScheme) ->
     let zl: &[u8; 32] = &zout[0..32].try_into().unwrap();
     let zr: &[u8; 32] = &zout[32..64].try_into().unwrap();
 
-    // left = kl + 8 * trunc28(zl)
-    let left = add_28_mul8(kl, zl, scheme);
+    // left = kl + 8 * trunc(zl)
+    // V2: truncates to 28 bytes (224 bits)
+    // Peikert: truncates to 247 bits
+    let left = add_mul8(kl, zl, scheme);
     // right = zr + kr
     let right = add_256bits(kr, zr, scheme);
 
@@ -104,8 +104,8 @@ pub fn private(xprv: &XPrv, index: DerivationIndex, scheme: DerivationScheme) ->
     XPrv::from_bytes(out)
 }
 
-fn point_of_trunc28_mul8(sk: &[u8; 32], scheme: DerivationScheme) -> [u8; 32] {
-    let copy = add_28_mul8(&[0u8; 32], sk, scheme);
+fn point_of_trunc_mul8(sk: &[u8; 32], scheme: DerivationScheme) -> [u8; 32] {
+    let copy = add_mul8(&[0u8; 32], sk, scheme);
     let scalar = Scalar::from_bytes(&copy);
     let a = Ge::scalarmult_base(&scalar);
     a.to_bytes()
@@ -160,8 +160,8 @@ pub fn public(
     let zl = <&[u8; 32]>::try_from(&zout[0..32]).unwrap();
     let _zr = &zout[32..64];
 
-    // left = kl + 8 * trunc28(zl)
-    let left = point_plus(pk, &point_of_trunc28_mul8(zl, scheme))?;
+    // left = pk + 8 * trunc(zl)
+    let left = point_plus(pk, &point_of_trunc_mul8(zl, scheme))?;
 
     let mut iout = [0u8; 64];
     imac.raw_result(&mut iout);
