@@ -17,6 +17,7 @@
 extern crate test;
 
 pub mod api;
+mod api_extern;
 mod derivation;
 mod hex;
 mod key;
@@ -30,6 +31,7 @@ mod tests;
 #[cfg(feature = "with-bench")]
 mod bench;
 
+pub use api::*;
 pub use derivation::{DerivationError, DerivationIndex, DerivationScheme};
 pub use key::{PrivateKeyError, PublicKeyError, XPrv, XPub, XPRV_SIZE, XPUB_SIZE};
 pub use signature::{Signature, SignatureError, SIGNATURE_SIZE};

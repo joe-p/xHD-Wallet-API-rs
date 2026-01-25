@@ -13,6 +13,9 @@ categories = [ "cryptography" ]
 [dependencies]
 cryptoxide = "0.4"
 
+[lib]
+crate-type = ["lib", "cdylib"]
+
 [dev-dependencies]
 base64 = "0.22"
 

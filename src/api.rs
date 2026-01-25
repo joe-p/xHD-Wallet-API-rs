@@ -22,7 +22,7 @@ pub fn harden(index: DerivationIndex) -> DerivationIndex {
     index + HARDENED_OFFSET
 }
 
-fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationScheme) -> XPrv {
+pub fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationScheme) -> XPrv {
     let mut current_xprv = root_xprv.clone();
     for &index in path {
         current_xprv = current_xprv.derive(scheme, index);
