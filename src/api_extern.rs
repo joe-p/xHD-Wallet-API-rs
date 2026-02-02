@@ -171,6 +171,11 @@ pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
     out_slice.copy_from_slice(root_xprv.as_ref());
 }
 
+/// # Safety
+/// * `mnemonic` must point to a UTF-8 encoded byte array of length `mnemonic_length`
+/// * `seed_out` must point to a byte array of 64 bytes
+/// * `lang_code` must point to a UTF-8 encoded byte array of length `lang_code_length`
+/// * `passphrase` must point to a UTF-8 encoded byte array of length `passphrase_length` (can be zero)
 #[no_mangle]
 pub extern "C" fn seed_from_mnemonic(
     mnemonic: *const u8,
