@@ -23,6 +23,11 @@ fn xprv_from_ptr(ptr: *const u8) -> Result<XPrv, ()> {
 /// * `root_xprv` must point to a 96 byte array
 /// * `path` must point to an array of u32 of length `path_length`
 /// * `derived_xprv_out` must point to a 96 byte array
+///
+/// # Returns
+/// * `Success` (0) - Path derivation completed successfully
+/// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
+/// * `InvalidDerivationScheme` (2) - The scheme value is not a valid derivation scheme
 #[no_mangle]
 pub unsafe extern "C" fn derive_path(
     root_xprv: *const u8,
@@ -52,6 +57,11 @@ pub unsafe extern "C" fn derive_path(
 /// # Safety
 /// * `root_xprv` must point to a 96 byte array
 /// * `derived_xprv_out` must point to a 96 byte array
+///
+/// # Returns
+/// * `Success` (0) - Key generation completed successfully
+/// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
+/// * `InvalidDerivationScheme` (2) - The context or scheme value is not valid
 #[no_mangle]
 pub unsafe extern "C" fn key_gen(
     root_xprv: *const u8,
@@ -90,6 +100,11 @@ pub unsafe extern "C" fn key_gen(
 /// * `bip44_path` must point to an array of u32 of length `path_length`
 /// * `data` must point to an array of u8 of length `data_length`
 /// * `signature_out` must point to an array of u8 of sufficient length to hold the signature
+///
+/// # Returns
+/// * `Success` (0) - Signing completed successfully
+/// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
+/// * `InvalidDerivationScheme` (2) - The scheme value is not a valid derivation scheme
 #[no_mangle]
 pub unsafe extern "C" fn raw_sign(
     root_xprv: *const u8,
@@ -124,6 +139,11 @@ pub unsafe extern "C" fn raw_sign(
 /// * `root_xprv` must point to a 96 byte array
 /// * `data` must point to an array of u8 of length `data_length`
 /// * `signature_out` must point to an array of u8 of sufficient length to hold the signature
+///
+/// # Returns
+/// * `Success` (0) - Signing completed successfully
+/// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
+/// * `InvalidDerivationScheme` (2) - The context or scheme value is not valid
 #[no_mangle]
 pub unsafe extern "C" fn sign(
     root_xprv: *const u8,
@@ -176,6 +196,21 @@ pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
 /// * `seed_out` must point to a byte array of 64 bytes
 /// * `lang_code` must point to a UTF-8 encoded byte array of length `lang_code_length`
 /// * `passphrase` must point to a UTF-8 encoded byte array of length `passphrase_length` (can be zero)
+///
+/// # Returns
+/// * `Success` (0) - Seed generation completed successfully
+/// * `InvalidUtf8` (4) - The mnemonic, language code, or passphrase contains invalid UTF-8
+/// * `InvalidLanguageCode` (3) - The language code is not recognized or the mnemonic is invalid for the language
+///
+/// # Language Codes
+/// * "en" - English
+/// * "zh-hans" - Chinese Simplified
+/// * "zh-hant" - Chinese Traditional
+/// * "fr" - French
+/// * "it" - Italian
+/// * "ja" - Japanese
+/// * "ko" - Korean
+/// * "es" - Spanish
 #[no_mangle]
 pub extern "C" fn seed_from_mnemonic(
     mnemonic: *const u8,
