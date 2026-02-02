@@ -80,6 +80,8 @@ pub fn sign(
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto;
+
     use super::*;
 
     fn base64_decode(s: &str) -> Vec<u8> {
@@ -87,6 +89,7 @@ mod tests {
         general_purpose::STANDARD.decode(s).unwrap()
     }
 
+    const SEED_HEX: &str = "3aff2db416b895ec3cf9a4f8d1e970bc9819920e7bf44a5e350477af0ef557b1511b0986debf78dd38c7c520cd44ff7c7231618f958e21ef0250733a8c1915ea";
     const ROOT_KEY_HEX: &str = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
 
     /// Helper to convert hex string to bytes
@@ -121,6 +124,21 @@ mod tests {
             public_key.public_key_slice(),
             expected_public_key.as_slice(),
             "Derived Algorand address public key should match expected value"
+        );
+    }
+
+    #[test]
+    fn test_from_seed() {
+        let seed_bytes = hex_to_bytes(SEED_HEX);
+        let xprv = XPrv::from_seed(&seed_bytes.as_slice().try_into().unwrap());
+        let xprv_bytes: [u8; 96] = xprv.into();
+
+        let expected_root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
+
+        assert_eq!(
+            xprv_bytes,
+            expected_root_key_bytes.as_slice(),
+            "Derived root key should match expected value"
         );
     }
 
