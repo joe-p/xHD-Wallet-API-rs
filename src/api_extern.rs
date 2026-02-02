@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use crate::{api, XPrv};
 
@@ -156,19 +156,23 @@ pub unsafe extern "C" fn sign(
     ReturnCode::Success
 }
 
+/// # Safety
+/// * `seed` must point to a byte array of 64 bytes
+/// * `root_xprv_out` must point to a byte array of 96 bytes
+#[no_mangle]
+pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
+    let seed_slice = unsafe { std::slice::from_raw_parts(seed, 64) };
+    let root_xprv = XPrv::from_seed(seed_slice.try_into().unwrap());
+    let out_slice = unsafe { std::slice::from_raw_parts_mut(root_xprv_out, 96) };
+    out_slice.copy_from_slice(root_xprv.as_ref());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const VALID_ROOT_KEY: [u8; 96] = [
-        0xf8, 0xa2, 0x92, 0x31, 0xee, 0x38, 0xd6, 0xc5, 0xbf, 0x71, 0x5d, 0x5b, 0xac, 0x21, 0xc7,
-        0x50, 0x57, 0x7a, 0xa3, 0x79, 0x8b, 0x22, 0xd7, 0x9d, 0x65, 0xbf, 0x97, 0xd6, 0xfa, 0xde,
-        0xa1, 0x5a, 0xdc, 0xd1, 0xee, 0x1a, 0xbd, 0xf7, 0x8b, 0xd4, 0xbe, 0x64, 0x73, 0x1a, 0x12,
-        0xde, 0xb9, 0x4d, 0x36, 0x71, 0x78, 0x41, 0x12, 0xeb, 0x6f, 0x36, 0x4b, 0x87, 0x18, 0x51,
-        0xfd, 0x1c, 0x9a, 0x24, 0x73, 0x84, 0xdb, 0x9a, 0xd6, 0x00, 0x3b, 0xbd, 0x08, 0xb3, 0xb1,
-        0xdd, 0xc0, 0xd0, 0x7a, 0x59, 0x72, 0x93, 0xff, 0x85, 0xe9, 0x61, 0xbf, 0x25, 0x2b, 0x33,
-        0x12, 0x62, 0xed, 0xdf, 0xad, 0x0d,
-    ];
+    const SEED_HEX: &str = "3aff2db416b895ec3cf9a4f8d1e970bc9819920e7bf44a5e350477af0ef557b1511b0986debf78dd38c7c520cd44ff7c7231618f958e21ef0250733a8c1915ea";
+    const ROOT_KEY_HEX: &str = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
 
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
         (0..hex.len())
@@ -178,8 +182,18 @@ mod tests {
     }
 
     #[test]
+    fn test_from_seed() {
+        let mut root_xprv_out = [0u8; 96];
+
+        let seed_bytes = hex_to_bytes(SEED_HEX);
+        from_seed(seed_bytes.as_ptr(), root_xprv_out.as_mut_ptr());
+
+        assert_eq!(root_xprv_out, hex_to_bytes(ROOT_KEY_HEX).as_slice());
+    }
+
+    #[test]
     fn test_derive_path_success() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let mut derived_xprv_out = [0u8; 96];
 
@@ -215,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_derive_path_invalid_scheme() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let mut derived_xprv_out = [0u8; 96];
 
@@ -233,7 +247,7 @@ mod tests {
 
     #[test]
     fn test_key_gen_success_address() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let mut derived_xprv_out = [0u8; 96];
 
         unsafe {
@@ -244,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_key_gen_success_identity() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let mut derived_xprv_out = [0u8; 96];
 
         unsafe {
@@ -273,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_key_gen_invalid_context() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let mut derived_xprv_out = [0u8; 96];
 
         unsafe {
@@ -291,7 +305,7 @@ mod tests {
 
     #[test]
     fn test_key_gen_invalid_scheme() {
-        let root_key = VALID_ROOT_KEY;
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let mut derived_xprv_out = [0u8; 96];
 
         unsafe {
@@ -309,8 +323,7 @@ mod tests {
 
     #[test]
     fn test_raw_sign_success() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let bip44_path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
@@ -352,8 +365,7 @@ mod tests {
 
     #[test]
     fn test_raw_sign_invalid_scheme() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let bip44_path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
@@ -374,8 +386,7 @@ mod tests {
 
     #[test]
     fn test_sign_success() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
 
@@ -417,8 +428,7 @@ mod tests {
 
     #[test]
     fn test_sign_invalid_context() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
 
@@ -439,8 +449,7 @@ mod tests {
 
     #[test]
     fn test_sign_invalid_scheme() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
 
@@ -461,8 +470,7 @@ mod tests {
 
     #[test]
     fn test_derive_path_matches_internal_api() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let mut derived_xprv_out = [0u8; 96];
 
@@ -484,8 +492,7 @@ mod tests {
 
     #[test]
     fn test_key_gen_matches_internal_api() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let mut derived_xprv_out = [0u8; 96];
 
         let root_xprv = XPrv::from_slice_verified(&root_key).unwrap();
@@ -506,8 +513,7 @@ mod tests {
 
     #[test]
     fn test_raw_sign_matches_internal_api() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let bip44_path: [u32; 5] = [0x8000002c, 0x8000011b, 0x80000000, 0, 0];
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
@@ -537,8 +543,7 @@ mod tests {
 
     #[test]
     fn test_sign_matches_internal_api() {
-        let root_key_hex = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
-        let root_key = hex_to_bytes(root_key_hex);
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
         let data = b"Hello World";
         let mut signature_out = [0u8; 64];
 
