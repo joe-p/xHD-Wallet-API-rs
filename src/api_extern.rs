@@ -1,5 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
+use bip39::{Mnemonic, Seed};
+
 use crate::{api, XPrv};
 
 #[repr(u8)]
@@ -8,6 +10,8 @@ pub enum ReturnCode {
     Success = 0,
     InvalidRootKey = 1,
     InvalidDerivationScheme = 2,
+    InvalidLanguageCode = 3,
+    InvalidUtf8 = 4,
 }
 
 fn xprv_from_ptr(ptr: *const u8) -> Result<XPrv, ()> {
@@ -167,10 +171,62 @@ pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
     out_slice.copy_from_slice(root_xprv.as_ref());
 }
 
+#[no_mangle]
+pub extern "C" fn seed_from_mnemonic(
+    mnemonic: *const u8,
+    mnemonic_length: usize,
+    seed_out: *mut u8,
+    lang_code: *const u8,
+    lang_code_length: usize,
+    passphrase: *const u8,
+    passphrase_length: usize,
+) -> ReturnCode {
+    let mnemonic_slice = unsafe { std::slice::from_raw_parts(mnemonic, mnemonic_length) };
+    let mnemonic_str = match std::str::from_utf8(mnemonic_slice) {
+        Ok(s) => s,
+        Err(_) => return ReturnCode::InvalidUtf8,
+    };
+
+    let lang_code_slice = unsafe { std::slice::from_raw_parts(lang_code, lang_code_length) };
+    let lang_code_str = match std::str::from_utf8(lang_code_slice) {
+        Ok(s) => s,
+        Err(_) => return ReturnCode::InvalidUtf8,
+    };
+
+    let language = match bip39::Language::from_language_code(lang_code_str) {
+        Some(lang) => lang,
+        None => return ReturnCode::InvalidLanguageCode,
+    };
+
+    let mnemonic = match Mnemonic::from_phrase(mnemonic_str, language) {
+        Ok(mnemonic) => mnemonic,
+        Err(_) => return ReturnCode::InvalidLanguageCode,
+    };
+
+    let password = if passphrase_length > 0 {
+        let passphrase_slice = unsafe { std::slice::from_raw_parts(passphrase, passphrase_length) };
+        match std::str::from_utf8(passphrase_slice) {
+            Ok(s) => s,
+            Err(_) => return ReturnCode::InvalidUtf8,
+        }
+    } else {
+        ""
+    };
+
+    let seed = Seed::new(&mnemonic, password);
+    let seed_bytes = seed.as_bytes();
+
+    let out_slice = unsafe { std::slice::from_raw_parts_mut(seed_out, 64) };
+    out_slice.copy_from_slice(seed_bytes);
+
+    ReturnCode::Success
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const MNEMONIC: &str = "salon zoo engage submit smile frost later decide wing sight chaos renew lizard rely canal coral scene hobby scare step bus leaf tobacco slice";
     const SEED_HEX: &str = "3aff2db416b895ec3cf9a4f8d1e970bc9819920e7bf44a5e350477af0ef557b1511b0986debf78dd38c7c520cd44ff7c7231618f958e21ef0250733a8c1915ea";
     const ROOT_KEY_HEX: &str = "a8ba80028922d9fcfa055c78aede55b5c575bcd8d5a53168edf45f36d9ec8f4694592b4bc892907583e22669ecdf1b0409a9f3bd5549f2dd751b51360909cd05796b9206ec30e142e94b790a98805bf999042b55046963174ee6cee2d0375946";
 
@@ -179,6 +235,24 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn test_seed_from_mnemonic() {
+        let mut seed_out = [0u8; 64];
+        let lang_code = b"en";
+        let result = seed_from_mnemonic(
+            MNEMONIC.as_ptr(),
+            MNEMONIC.len(),
+            seed_out.as_mut_ptr(),
+            lang_code.as_ptr(),
+            lang_code.len(),
+            std::ptr::null(),
+            0,
+        );
+
+        assert_eq!(result, ReturnCode::Success);
+        assert_eq!(seed_out, hex_to_bytes(SEED_HEX).as_slice());
     }
 
     #[test]

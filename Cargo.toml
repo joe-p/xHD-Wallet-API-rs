@@ -12,6 +12,7 @@ categories = [ "cryptography" ]
 
 [dependencies]
 cryptoxide = "0.4"
+tiny-bip39 = "2.0.0"
 
 [lib]
 crate-type = ["lib", "cdylib"]
