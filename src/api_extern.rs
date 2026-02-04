@@ -4,7 +4,7 @@ use bip39::{Mnemonic, Seed};
 
 use crate::{api, XPrv};
 
-#[repr(u8)]
+#[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReturnCode {
     Success = 0,
