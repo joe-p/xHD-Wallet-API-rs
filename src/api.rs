@@ -1,16 +1,25 @@
 use crate::{DerivationIndex, DerivationScheme, Signature, XPrv};
 
+/// Errors that can occur during key derivation.
 #[derive(Debug)]
 pub enum DerivationError {
+    /// The index is already hardened and cannot be hardened again.
     AlreadyHardened,
 }
 
+/// Context for key derivation, determining the coin type and purpose.
 pub enum KeyContext {
+    /// Address context for Algorand addresses (coin type 283).
     Address,
+    /// Identity context for identity keys (coin type 0).
     Identity,
 }
 
 impl KeyContext {
+    /// Returns the BIP44 coin type for this context.
+    ///
+    /// - Address: 283 (Algorand)
+    /// - Identity: 0
     pub fn coin_type(&self) -> DerivationIndex {
         match self {
             KeyContext::Address => 283,
@@ -21,12 +30,33 @@ impl KeyContext {
 
 const HARDENED_OFFSET: u32 = 0x80_00_00_00;
 
+/// Hardens a derivation index by adding the hardened offset.
+///
+/// # Arguments
+///
+/// * `index` - The derivation index to harden
+///
+/// # Returns
+///
+/// * `Ok(DerivationIndex)` - The hardened index
+/// * `Err(DerivationError::AlreadyHardened)` - If the index is already hardened
 pub fn harden(index: DerivationIndex) -> Result<DerivationIndex, DerivationError> {
     index
         .checked_add(HARDENED_OFFSET)
         .ok_or(DerivationError::AlreadyHardened)
 }
 
+/// Derives a child key along a path of derivation indices.
+///
+/// # Arguments
+///
+/// * `root_xprv` - The root extended private key
+/// * `path` - The derivation path as a slice of indices
+/// * `scheme` - The derivation scheme to use
+///
+/// # Returns
+///
+/// The derived extended private key at the end of the path
 fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationScheme) -> XPrv {
     let mut current_xprv = root_xprv.clone();
     for &index in path {
@@ -35,6 +65,22 @@ fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationSch
     current_xprv
 }
 
+/// Generates a key using the BIP44 derivation path.
+///
+/// Derives a key at path: m'/44'/<coin_type>'/<account>'/0/<key_index>
+///
+/// # Arguments
+///
+/// * `root_key` - The root extended private key
+/// * `context` - The key context (Address or Identity)
+/// * `account` - The account index (hardened)
+/// * `key_index` - The key index within the account
+/// * `scheme` - The derivation scheme to use
+///
+/// # Returns
+///
+/// * `Ok(XPrv)` - The derived extended private key
+/// * `Err(DerivationError)` - If derivation fails
 pub fn key_gen(
     root_key: &XPrv,
     context: KeyContext,
@@ -53,6 +99,18 @@ pub fn key_gen(
     Ok(derive_path(root_key, &bip44_path, scheme))
 }
 
+/// Signs data using a key derived from the given BIP44 path.
+///
+/// # Arguments
+///
+/// * `root_key` - The root extended private key
+/// * `bip44_path` - The BIP44 derivation path
+/// * `data` - The data to sign
+/// * `scheme` - The derivation scheme to use
+///
+/// # Returns
+///
+/// The signature as a byte vector
 pub fn raw_sign(
     root_key: &XPrv,
     bip44_path: &[DerivationIndex],
@@ -64,6 +122,24 @@ pub fn raw_sign(
     signature.to_bytes().to_vec()
 }
 
+/// Signs a transaction using a key derived via BIP44 path.
+///
+/// Derives a key at path: m'/44'/<coin_type>'/<account>'/0/<key_index>
+/// and signs the provided transaction data.
+///
+/// # Arguments
+///
+/// * `root_key` - The root extended private key
+/// * `context` - The key context (Address or Identity)
+/// * `account` - The account index (hardened)
+/// * `key_index` - The key index within the account
+/// * `prefix_encoded_tx` - The transaction data to sign
+/// * `scheme` - The derivation scheme to use
+///
+/// # Returns
+///
+/// * `Ok(Vec<u8>)` - The signature as a byte vector
+/// * `Err(DerivationError)` - If derivation fails
 pub fn sign(
     root_key: &XPrv,
     context: KeyContext,
