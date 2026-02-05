@@ -1,5 +1,10 @@
 use crate::{DerivationIndex, DerivationScheme, Signature, XPrv};
 
+#[derive(Debug)]
+pub enum DerivationError {
+    AlreadyHardened,
+}
+
 pub enum KeyContext {
     Address,
     Identity,
@@ -16,8 +21,10 @@ impl KeyContext {
 
 const HARDENED_OFFSET: u32 = 0x80_00_00_00;
 
-pub fn harden(index: DerivationIndex) -> DerivationIndex {
-    index + HARDENED_OFFSET
+pub fn harden(index: DerivationIndex) -> Result<DerivationIndex, DerivationError> {
+    index
+        .checked_add(HARDENED_OFFSET)
+        .ok_or(DerivationError::AlreadyHardened)
 }
 
 fn derive_path(root_xprv: &XPrv, path: &[DerivationIndex], scheme: DerivationScheme) -> XPrv {
@@ -34,16 +41,16 @@ pub fn key_gen(
     account: DerivationIndex,
     key_index: DerivationIndex,
     scheme: DerivationScheme,
-) -> XPrv {
+) -> Result<XPrv, DerivationError> {
     let bip44_path = [
-        harden(44),
-        harden(context.coin_type()),
-        harden(account),
+        harden(44)?,
+        harden(context.coin_type())?,
+        harden(account)?,
         0,
         key_index,
     ];
 
-    derive_path(root_key, &bip44_path, scheme)
+    Ok(derive_path(root_key, &bip44_path, scheme))
 }
 
 pub fn raw_sign(
@@ -64,16 +71,16 @@ pub fn sign(
     key_index: DerivationIndex,
     prefix_encoded_tx: &[u8],
     scheme: DerivationScheme,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, DerivationError> {
     let bip44_path = [
-        harden(44),
-        harden(context.coin_type()),
-        harden(account),
+        harden(44)?,
+        harden(context.coin_type())?,
+        harden(account)?,
         0,
         key_index,
     ];
 
-    raw_sign(root_key, &bip44_path, prefix_encoded_tx, scheme)
+    Ok(raw_sign(root_key, &bip44_path, prefix_encoded_tx, scheme))
 }
 
 #[cfg(test)]
@@ -103,7 +110,7 @@ mod tests {
         account: DerivationIndex,
         index: DerivationIndex,
         expected_public_key_hex: &str,
-    ) {
+    ) -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
@@ -113,7 +120,7 @@ mod tests {
             account,
             index,
             DerivationScheme::Peikert,
-        )
+        )?
         .public();
 
         let expected_public_key = hex_to_bytes(expected_public_key_hex);
@@ -123,6 +130,7 @@ mod tests {
             expected_public_key.as_slice(),
             "Derived Algorand address public key should match expected value"
         );
+        Ok(())
     }
 
     #[test]
@@ -156,27 +164,28 @@ mod tests {
     //        expect(key).toEqual(new Uint8Array(Buffer.from("00a72635e97cba966529e9bfb4baf4a32d7b8cd2fcd8e2476ce5be1177848cb3", "hex")))
     //    })
     #[test]
-    fn algorand_soft_derivation() {
+    fn algorand_soft_derivation() -> Result<(), DerivationError> {
         key_gen_test(
             KeyContext::Address,
             0,
             0,
             "7bda7ac12627b2c259f1df6875d30c10b35f55b33ad2cc8ea2736eaa3ebcfab9",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Address,
             0,
             1,
             "5bae8828f111064637ac5061bd63bc4fcfe4a833252305f25eeab9c64ecdf519",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Address,
             0,
             2,
             "00a72635e97cba966529e9bfb4baf4a32d7b8cd2fcd8e2476ce5be1177848cb3",
-        );
+        )?;
+        Ok(())
     }
     //
     // it("\(OK) Derive m'/44'/283'/1'/0/0 Algorand Address Key", async () => {
@@ -194,27 +203,28 @@ mod tests {
     //         expect(key).toEqual(new Uint8Array(Buffer.from("f035316f915b342ea5fe78dccb59d907b93805732219d436a1bd8488ff4e5b1b", "hex")))
     //     })
     #[test]
-    fn algorand_hard_derivation() {
+    fn algorand_hard_derivation() -> Result<(), DerivationError> {
         key_gen_test(
             KeyContext::Address,
             1,
             0,
             "358d8c4382992849a764438e02b1c45c2ca4e86bbcfe10fd5b963f3610012bc9",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Address,
             2,
             1,
             "1f0f75fbbca12b22523973191061b2f96522740e139a3420c730717ac5b0dfc0",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Address,
             3,
             0,
             "f035316f915b342ea5fe78dccb59d907b93805732219d436a1bd8488ff4e5b1b",
-        );
+        )?;
+        Ok(())
     }
 
     // it("\(OK) Derive m'/44'/0'/0'/0/0 Identity Key", async () => {
@@ -232,27 +242,28 @@ mod tests {
     //            expect(key).toEqual(new Uint8Array(Buffer.from("2713f135f19ef3dcfca73cb536b1e077b1165cd0b7bedbef709447319ff0016d", "hex")))
     //        })
     #[test]
-    fn identity_soft_derivation() {
+    fn identity_soft_derivation() -> Result<(), DerivationError> {
         key_gen_test(
             KeyContext::Identity,
             0,
             0,
             "ff8b1863ef5e40d0a48c245f26a6dbdf5da94dc75a1851f51d8a04e547bd5f5a",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Identity,
             0,
             1,
             "2b46c2af0890493e486049d456509a0199e565b41a5fb622f0ea4b9337bd2b97",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Identity,
             0,
             2,
             "2713f135f19ef3dcfca73cb536b1e077b1165cd0b7bedbef709447319ff0016d",
-        );
+        )?;
+        Ok(())
     }
 
     // it("\(OK) Derive m'/44'/0'/1'/0/0 Identity Key", async () => {
@@ -265,20 +276,21 @@ mod tests {
     //                expect(key).toEqual(new Uint8Array(Buffer.from("8f68b6572860d84e8a41e38db1c8c692ded5eb291846f2e5bbfde774a9c6d16e", "hex")))
     //            })
     #[test]
-    fn identity_hard_derivation() {
+    fn identity_hard_derivation() -> Result<(), DerivationError> {
         key_gen_test(
             KeyContext::Identity,
             1,
             0,
             "232847ae1bb95babcaa50c8033fab98f59e4b4ad1d89ac523a90c830e4ceee4a",
-        );
+        )?;
 
         key_gen_test(
             KeyContext::Identity,
             2,
             1,
             "8f68b6572860d84e8a41e38db1c8c692ded5eb291846f2e5bbfde774a9c6d16e",
-        );
+        )?;
+        Ok(())
     }
 
     // Test: Root Key format
@@ -299,11 +311,11 @@ mod tests {
     //     expect(derivedPub).toEqual(key)
     // })
     #[test]
-    fn bip32_ed25519_khovratovich_derive_address_0_0() {
+    fn bip32_ed25519_khovratovich_derive_address_0_0() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let bip44_path = [harden(44), harden(283), harden(0), 0, 0];
+        let bip44_path = [harden(44)?, harden(283)?, harden(0)?, 0, 0];
 
         let mut current_xprv = root_xprv.clone();
         for &index in &bip44_path {
@@ -311,23 +323,25 @@ mod tests {
         }
 
         let public_key = current_xprv.public().public_key();
-        let expected_key_gen = key_gen(&root_xprv, KeyContext::Address, 0, 0, DerivationScheme::V2)
-            .public()
-            .public_key();
+        let expected_key_gen =
+            key_gen(&root_xprv, KeyContext::Address, 0, 0, DerivationScheme::V2)?
+                .public()
+                .public_key();
 
         assert_eq!(
             public_key, expected_key_gen,
             "Khovratovich derivation should match key_gen"
         );
+        Ok(())
     }
 
     // Test: BIP32-Ed25519 derive key m'/44'/283'/0'/0/1 using Khovratovich (V2) scheme
     #[test]
-    fn bip32_ed25519_khovratovich_derive_address_0_1() {
+    fn bip32_ed25519_khovratovich_derive_address_0_1() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let bip44_path = [harden(44), harden(283), harden(0), 0, 1];
+        let bip44_path = [harden(44)?, harden(283)?, harden(0)?, 0, 1];
 
         let mut current_xprv = root_xprv.clone();
         for &index in &bip44_path {
@@ -335,14 +349,16 @@ mod tests {
         }
 
         let public_key = current_xprv.public().public_key();
-        let expected_key_gen = key_gen(&root_xprv, KeyContext::Address, 0, 1, DerivationScheme::V2)
-            .public()
-            .public_key();
+        let expected_key_gen =
+            key_gen(&root_xprv, KeyContext::Address, 0, 1, DerivationScheme::V2)?
+                .public()
+                .public_key();
 
         assert_eq!(
             public_key, expected_key_gen,
             "Khovratovich derivation should match key_gen"
         );
+        Ok(())
     }
 
     // Test: BIP32-Ed25519 derive PUBLIC key m'/44'/283'/1'/0/1 using Khovratovich (V2) scheme
@@ -350,11 +366,11 @@ mod tests {
     //     ...
     // })
     #[test]
-    fn bip32_ed25519_khovratovich_derive_public_address_1_1() {
+    fn bip32_ed25519_khovratovich_derive_public_address_1_1() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let bip44_path_private = [harden(44), harden(283), harden(1), 0, 1];
+        let bip44_path_private = [harden(44)?, harden(283)?, harden(1)?, 0, 1];
 
         let mut current_xprv = root_xprv.clone();
         for &index in &bip44_path_private[..3] {
@@ -370,23 +386,25 @@ mod tests {
             .unwrap()
             .public_key();
 
-        let expected_key_gen = key_gen(&root_xprv, KeyContext::Address, 1, 1, DerivationScheme::V2)
-            .public()
-            .public_key();
+        let expected_key_gen =
+            key_gen(&root_xprv, KeyContext::Address, 1, 1, DerivationScheme::V2)?
+                .public()
+                .public_key();
 
         assert_eq!(
             derived_pub, expected_key_gen,
             "Public derivation should match private derivation"
         );
+        Ok(())
     }
 
     // Test: BIP32-Ed25519 derive PUBLIC key m'/44'/0'/1'/0/2 using Khovratovich (V2) scheme
     #[test]
-    fn bip32_ed25519_khovratovich_derive_public_identity_1_2() {
+    fn bip32_ed25519_khovratovich_derive_public_identity_1_2() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let bip44_path_private = [harden(44), harden(0), harden(1), 0, 2];
+        let bip44_path_private = [harden(44)?, harden(0)?, harden(1)?, 0, 2];
 
         let mut current_xprv = root_xprv.clone();
         for &index in &bip44_path_private[..3] {
@@ -403,7 +421,7 @@ mod tests {
             .public_key();
 
         let expected_key_gen =
-            key_gen(&root_xprv, KeyContext::Identity, 1, 2, DerivationScheme::V2)
+            key_gen(&root_xprv, KeyContext::Identity, 1, 2, DerivationScheme::V2)?
                 .public()
                 .public_key();
 
@@ -411,11 +429,12 @@ mod tests {
             derived_pub, expected_key_gen,
             "Public derivation should match private derivation"
         );
+        Ok(())
     }
 
     // Test: Sign and verify a message
     #[test]
-    fn sign_and_verify_message() {
+    fn sign_and_verify_message() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
@@ -427,7 +446,7 @@ mod tests {
             0,
             0,
             DerivationScheme::Peikert,
-        );
+        )?;
         let xpub = xprv.public();
 
         let signature: Signature<Vec<u8>> = xprv.sign(message);
@@ -437,6 +456,7 @@ mod tests {
             xpub.verify(message, &signature),
             "Signature should be valid"
         );
+        Ok(())
     }
 
     // Test: Sign transaction
@@ -447,11 +467,11 @@ mod tests {
     //     expect(nacl.sign.detached.verify(prefixEncodedTx, sig, key)).toBe(true)
     // })
     #[test]
-    fn sign_transaction() {
+    fn sign_transaction() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let xprv = key_gen(&root_xprv, KeyContext::Address, 0, 0, DerivationScheme::V2);
+        let xprv = key_gen(&root_xprv, KeyContext::Address, 0, 0, DerivationScheme::V2)?;
         let xpub = xprv.public();
 
         let prefix_encoded_tx = base64_decode("VFiJo2FtdM0D6KNmZWXNA+iiZnbOAkeSd6NnZW6sdGVzdG5ldC12MS4womhoxCBIY7UYpLPITsgQ8i1PEIHLD3HwWaesIN7GL39w5Qk6IqJsds4CR5Zfo3JjdsQgYv6DK3rRBUS+gzemcENeUGSuSmbne9eJCXZbRrV2pvOjc25kxCBi/oMretEFRL6DN6ZwQ15QZK5KZud714kJdltGtXam86R0eXBlo3BheQ==");
@@ -463,7 +483,7 @@ mod tests {
             0,
             &prefix_encoded_tx,
             DerivationScheme::V2,
-        );
+        )?;
 
         assert_eq!(sig.len(), 64, "Signature should be 64 bytes");
         assert!(
@@ -473,6 +493,7 @@ mod tests {
             ),
             "Signature should be valid for the transaction"
         );
+        Ok(())
     }
 
     // Test: deriveNodePublic - derive N keys with only public information
@@ -480,11 +501,11 @@ mod tests {
     //     ...
     // })
     #[test]
-    fn derive_node_public_soft_derivation() {
+    fn derive_node_public_soft_derivation() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let wallet_root_path = [harden(44), harden(283), harden(0), 0];
+        let wallet_root_path = [harden(44)?, harden(283)?, harden(0)?, 0];
 
         let mut wallet_root_xprv = root_xprv.clone();
         for &index in &wallet_root_path {
@@ -504,7 +525,7 @@ mod tests {
                 0,
                 i,
                 DerivationScheme::Peikert,
-            )
+            )?
             .public()
             .public_key();
 
@@ -515,6 +536,7 @@ mod tests {
                 i
             );
         }
+        Ok(())
     }
 
     // Test: deriveNodePublic - should NOT derive correct addresses from hardened root
@@ -522,11 +544,11 @@ mod tests {
     //     ...
     // })
     #[test]
-    fn derive_node_public_hard_derivation_mismatch() {
+    fn derive_node_public_hard_derivation_mismatch() -> Result<(), DerivationError> {
         let root_key_bytes = hex_to_bytes(ROOT_KEY_HEX);
         let root_xprv = XPrv::from_slice_verified(&root_key_bytes).unwrap();
 
-        let wallet_root_path = [harden(44), harden(283), harden(0), harden(0)];
+        let wallet_root_path = [harden(44)?, harden(283)?, harden(0)?, harden(0)?];
 
         let mut wallet_root_xprv = root_xprv.clone();
         for &index in &wallet_root_path {
@@ -546,7 +568,7 @@ mod tests {
                 0,
                 i,
                 DerivationScheme::Peikert,
-            )
+            )?
             .public()
             .public_key();
 
@@ -557,5 +579,6 @@ mod tests {
             i
         );
         }
+        Ok(())
     }
 }
