@@ -3,7 +3,10 @@ use std::fmt;
 use cryptoxide::constant_time::CtEqual;
 use cryptoxide::ed25519;
 use cryptoxide::ed25519::signature_extended;
-use cryptoxide::hashing::sha2::Sha512;
+use cryptoxide::hashing::sha2::{Sha256, Sha512};
+use cryptoxide::hmac::Hmac;
+use cryptoxide::mac::Mac;
+use cryptoxide::sha2::Sha512 as Sha512ForHmac;
 
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;
@@ -109,6 +112,50 @@ impl XPrv {
         } else {
             Err(())
         }
+    }
+
+    /// Create a `XPrv` from a 64-byte seed using the BIP32-Ed25519 algorithm.
+    ///
+    /// This implements the algorithm from the bip32-ed25519 paper:
+    /// 1. k = H512(seed)
+    /// 2. While the third highest bit of the last byte of kL is not zero:
+    ///    k = HMAC-SHA512(kL, kR)
+    /// 3. Clamp kL bits
+    /// 4. c = SHA256(0x01 || seed)
+    /// 5. Return XPrv from kL || kR || c
+    pub fn from_seed(seed: &[u8; 64]) -> Self {
+        // k = H512(seed)
+        let mut k = Sha512::new().update(seed).finalize();
+        let mut k_l: [u8; 32] = k[0..32].try_into().unwrap();
+        let mut k_r: [u8; 32] = k[32..64].try_into().unwrap();
+
+        // While the third highest bit of the last byte of k_l is not zero
+        while (k_l[31] & 0b0010_0000) != 0 {
+            let mut hmac = Hmac::new(Sha512ForHmac::new(), &k_l);
+            hmac.input(&k_r);
+            let mut hmac_out = [0u8; 64];
+            hmac.raw_result(&mut hmac_out);
+            k = hmac_out;
+            k_l = k[0..32].try_into().unwrap();
+            k_r = k[32..64].try_into().unwrap();
+        }
+
+        // Clamp k_l
+        k_l[0] &= 0b1111_1000; // Clear lowest 3 bits of first byte
+        k_l[31] &= 0b0111_1111; // Clear highest bit of last byte
+        k_l[31] |= 0b0100_0000; // Set second highest bit of last byte
+
+        // c = SHA256(0x01 || seed)
+        let mut cc_input = [0u8; 65];
+        cc_input[0] = 0x01;
+        cc_input[1..65].copy_from_slice(seed);
+        let chain_code = Sha256::new().update(&cc_input).finalize();
+
+        let mut extended_key = [0u8; EXTENDED_SECRET_KEY_SIZE];
+        extended_key[0..32].copy_from_slice(&k_l);
+        extended_key[32..64].copy_from_slice(&k_r);
+
+        Self::from_extended_and_chaincode(&extended_key, &chain_code)
     }
 
     /// create a `XPrv` by its components (a 64 bytes extended secret key, and a 32 bytes chain code)

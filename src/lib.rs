@@ -16,6 +16,7 @@
 #[cfg(feature = "with-bench")]
 extern crate test;
 
+pub mod api;
 mod derivation;
 mod hex;
 mod key;
