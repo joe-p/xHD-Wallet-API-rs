@@ -12,6 +12,7 @@ pub enum ReturnCode {
     InvalidDerivationScheme = 2,
     InvalidLanguageCode = 3,
     InvalidUtf8 = 4,
+    AlreadyHardenedDerivationIndex = 5,
 }
 
 fn xprv_from_ptr(ptr: *const u8) -> Result<XPrv, ()> {
@@ -87,7 +88,10 @@ pub unsafe extern "C" fn key_gen(
         Err(_) => return ReturnCode::InvalidDerivationScheme,
     };
 
-    let derived_xprv = api::key_gen(&xprv, key_context, account, key_index, scheme);
+    let derived_xprv = match api::key_gen(&xprv, key_context, account, key_index, scheme) {
+        Ok(k) => k,
+        Err(_) => return ReturnCode::AlreadyHardenedDerivationIndex,
+    };
 
     let out_slice = std::slice::from_raw_parts_mut(derived_xprv_out, 96);
     out_slice.copy_from_slice(derived_xprv.as_ref());
@@ -173,7 +177,11 @@ pub unsafe extern "C" fn sign(
         Err(_) => return ReturnCode::InvalidDerivationScheme,
     };
 
-    let signature_bytes = api::sign(&xprv, key_context, account, key_index, data_slice, scheme);
+    let signature_bytes =
+        match api::sign(&xprv, key_context, account, key_index, data_slice, scheme) {
+            Ok(sig) => sig,
+            Err(_) => return ReturnCode::AlreadyHardenedDerivationIndex,
+        };
     let out_slice = std::slice::from_raw_parts_mut(signature_out, signature_bytes.len());
     out_slice.copy_from_slice(&signature_bytes);
 
@@ -622,7 +630,7 @@ mod tests {
             key_gen(root_key.as_ptr(), 0, 0, 0, 1, derived_xprv_out.as_mut_ptr());
         }
 
-        assert_eq!(derived_xprv_out, expected.as_ref());
+        assert_eq!(derived_xprv_out, expected.unwrap().as_ref());
     }
 
     #[test]
@@ -669,7 +677,8 @@ mod tests {
             0,
             data,
             crate::DerivationScheme::Peikert,
-        );
+        )
+        .unwrap();
 
         unsafe {
             sign(
