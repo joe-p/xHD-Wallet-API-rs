@@ -1,7 +1,5 @@
 use crate::{DerivationIndex, DerivationScheme, Signature, XPrv};
 
-pub type BIP44Path = [DerivationIndex; 5];
-
 pub enum KeyContext {
     Address,
     Identity,
