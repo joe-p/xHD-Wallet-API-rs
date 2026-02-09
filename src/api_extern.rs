@@ -270,6 +270,27 @@ pub extern "C" fn seed_from_mnemonic(
     ReturnCode::Success
 }
 
+/// # Safety
+/// * `xprv` must point to a 96 byte array
+/// * `public_key_out` must point to a 32 byte array
+///
+/// # Returns
+/// * `Success` (0) - Public key extraction completed successfully
+/// * `InvalidRootKey` (1) - The provided xprv is invalid or not 96 bytes
+#[no_mangle]
+pub unsafe extern "C" fn public_key(xprv: *const u8, public_key_out: *mut u8) -> ReturnCode {
+    let xprv = match xprv_from_ptr(xprv) {
+        Ok(k) => k,
+        Err(_) => return ReturnCode::InvalidRootKey,
+    };
+    let xpub = xprv.public();
+    let public_key = xpub.public_key();
+    let out_slice = unsafe { std::slice::from_raw_parts_mut(public_key_out, 32) };
+    out_slice.copy_from_slice(&public_key);
+
+    ReturnCode::Success
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,5 +715,32 @@ mod tests {
         }
 
         assert_eq!(signature_out.to_vec(), expected);
+    }
+
+    #[test]
+    fn test_public_key_success() {
+        let root_key = hex_to_bytes(ROOT_KEY_HEX);
+        let mut public_key_out = [0u8; 32];
+
+        unsafe {
+            let result = public_key(root_key.as_ptr(), public_key_out.as_mut_ptr());
+            assert_eq!(result, ReturnCode::Success);
+        }
+
+        // Verify the public key matches what we get from the internal API
+        let root_xprv = XPrv::from_slice_verified(&root_key).unwrap();
+        let expected_public_key = root_xprv.public().public_key();
+        assert_eq!(public_key_out, expected_public_key);
+    }
+
+    #[test]
+    fn test_public_key_invalid_root_key() {
+        let invalid_root_key = [0u8; 96];
+        let mut public_key_out = [0u8; 32];
+
+        unsafe {
+            let result = public_key(invalid_root_key.as_ptr(), public_key_out.as_mut_ptr());
+            assert_eq!(result, ReturnCode::InvalidRootKey);
+        }
     }
 }
