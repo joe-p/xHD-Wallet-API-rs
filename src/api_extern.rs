@@ -13,6 +13,7 @@ pub enum ReturnCode {
     InvalidLanguageCode = 3,
     InvalidUtf8 = 4,
     AlreadyHardenedDerivationIndex = 5,
+    NullPointer = 6,
 }
 
 fn xprv_from_ptr(ptr: *const u8) -> Result<XPrv, ()> {
@@ -29,6 +30,7 @@ fn xprv_from_ptr(ptr: *const u8) -> Result<XPrv, ()> {
 /// * `Success` (0) - Path derivation completed successfully
 /// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
 /// * `InvalidDerivationScheme` (2) - The scheme value is not a valid derivation scheme
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
 pub unsafe extern "C" fn derive_path(
     root_xprv: *const u8,
@@ -37,6 +39,10 @@ pub unsafe extern "C" fn derive_path(
     scheme: u8,
     derived_xprv_out: *mut u8,
 ) -> ReturnCode {
+    if root_xprv.is_null() || path.is_null() || derived_xprv_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let xprv = match xprv_from_ptr(root_xprv) {
         Ok(k) => k,
         Err(_) => return ReturnCode::InvalidRootKey,
@@ -63,6 +69,7 @@ pub unsafe extern "C" fn derive_path(
 /// * `Success` (0) - Key generation completed successfully
 /// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
 /// * `InvalidDerivationScheme` (2) - The context or scheme value is not valid
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
 pub unsafe extern "C" fn key_gen(
     root_xprv: *const u8,
@@ -72,6 +79,10 @@ pub unsafe extern "C" fn key_gen(
     scheme: u8,
     derived_xprv_out: *mut u8,
 ) -> ReturnCode {
+    if root_xprv.is_null() || derived_xprv_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let xprv = match xprv_from_ptr(root_xprv) {
         Ok(k) => k,
         Err(_) => return ReturnCode::InvalidRootKey,
@@ -109,6 +120,7 @@ pub unsafe extern "C" fn key_gen(
 /// * `Success` (0) - Signing completed successfully
 /// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
 /// * `InvalidDerivationScheme` (2) - The scheme value is not a valid derivation scheme
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
 pub unsafe extern "C" fn raw_sign(
     root_xprv: *const u8,
@@ -119,6 +131,10 @@ pub unsafe extern "C" fn raw_sign(
     scheme: u8,
     signature_out: *mut u8,
 ) -> ReturnCode {
+    if root_xprv.is_null() || bip44_path.is_null() || data.is_null() || signature_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let xprv = match xprv_from_ptr(root_xprv) {
         Ok(k) => k,
         Err(_) => return ReturnCode::InvalidRootKey,
@@ -148,6 +164,7 @@ pub unsafe extern "C" fn raw_sign(
 /// * `Success` (0) - Signing completed successfully
 /// * `InvalidRootKey` (1) - The provided root key is invalid or not 96 bytes
 /// * `InvalidDerivationScheme` (2) - The context or scheme value is not valid
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
 pub unsafe extern "C" fn sign(
     root_xprv: *const u8,
@@ -159,6 +176,10 @@ pub unsafe extern "C" fn sign(
     scheme: u8,
     signature_out: *mut u8,
 ) -> ReturnCode {
+    if root_xprv.is_null() || data.is_null() || signature_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let xprv = match xprv_from_ptr(root_xprv) {
         Ok(k) => k,
         Err(_) => return ReturnCode::InvalidRootKey,
@@ -191,12 +212,22 @@ pub unsafe extern "C" fn sign(
 /// # Safety
 /// * `seed` must point to a byte array of 64 bytes
 /// * `root_xprv_out` must point to a byte array of 96 bytes
+///
+/// # Returns
+/// * `Success` (0) - Key generation completed successfully
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
-pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
+pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) -> ReturnCode {
+    if seed.is_null() || root_xprv_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let seed_slice = unsafe { std::slice::from_raw_parts(seed, 64) };
     let root_xprv = XPrv::from_seed(seed_slice.try_into().unwrap());
     let out_slice = unsafe { std::slice::from_raw_parts_mut(root_xprv_out, 96) };
     out_slice.copy_from_slice(root_xprv.as_ref());
+
+    ReturnCode::Success
 }
 
 /// # Safety
@@ -209,6 +240,7 @@ pub extern "C" fn from_seed(seed: *const u8, root_xprv_out: *mut u8) {
 /// * `Success` (0) - Seed generation completed successfully
 /// * `InvalidUtf8` (4) - The mnemonic, language code, or passphrase contains invalid UTF-8
 /// * `InvalidLanguageCode` (3) - The language code is not recognized or the mnemonic is invalid for the language
+/// * `NullPointer` (6) - One of the required pointer arguments is null (mnemonic, seed_out, or lang_code)
 ///
 /// # Language Codes
 /// * "en" - English
@@ -229,6 +261,10 @@ pub extern "C" fn seed_from_mnemonic(
     passphrase: *const u8,
     passphrase_length: usize,
 ) -> ReturnCode {
+    if mnemonic.is_null() || seed_out.is_null() || lang_code.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let mnemonic_slice = unsafe { std::slice::from_raw_parts(mnemonic, mnemonic_length) };
     let mnemonic_str = match std::str::from_utf8(mnemonic_slice) {
         Ok(s) => s,
@@ -277,8 +313,13 @@ pub extern "C" fn seed_from_mnemonic(
 /// # Returns
 /// * `Success` (0) - Public key extraction completed successfully
 /// * `InvalidRootKey` (1) - The provided xprv is invalid or not 96 bytes
+/// * `NullPointer` (6) - One of the required pointer arguments is null
 #[no_mangle]
 pub unsafe extern "C" fn public_key(xprv: *const u8, public_key_out: *mut u8) -> ReturnCode {
+    if xprv.is_null() || public_key_out.is_null() {
+        return ReturnCode::NullPointer;
+    }
+
     let xprv = match xprv_from_ptr(xprv) {
         Ok(k) => k,
         Err(_) => return ReturnCode::InvalidRootKey,
