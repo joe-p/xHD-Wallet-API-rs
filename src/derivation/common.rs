@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum DerivationType {
     Soft(u32),
@@ -56,5 +58,17 @@ impl DerivationScheme {
 impl Default for DerivationScheme {
     fn default() -> Self {
         DerivationScheme::V2
+    }
+}
+
+impl TryFrom<u8> for DerivationScheme {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(DerivationScheme::V2),
+            1 => Ok(DerivationScheme::Peikert),
+            _ => Err(()),
+        }
     }
 }
